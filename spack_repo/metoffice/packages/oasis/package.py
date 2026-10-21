@@ -5,8 +5,10 @@
 # -----------------------------------------------------------------------------
 
 import os
+import shutil
+import glob
 
-from spack.package import copy_tree, depends_on, variant, version
+from spack.package import copy_tree, copy, depends_on, variant, version
 from spack_repo.builtin.build_systems.makefile import MakefilePackage
 
 
@@ -17,7 +19,7 @@ class Oasis(MakefilePackage):
     git = "https://gitlab.com/cerfacs/oasis3-mct.git"
 
     version("3-mct5.0", branch="OASIS3-MCT_5.0")
-    version("3-mct4.0-GCM", ref="b427e1d517cae0015461eb38bfd72c1822c2789f")
+    version("3-mct4.0-GCM", branch="rh_o3mct_4.0")
 
     depends_on("netcdf-fortran")
     depends_on("mpi")
@@ -91,10 +93,10 @@ class Oasis(MakefilePackage):
             "AR": "ar",
             "ARFLAGS": "-ruv",
             # Compilers are set above
-            "F90": spec["mpi"].mpifc,
-            "F": spec["mpi"].mpifc,
-            "f90": spec["mpi"].mpifc,
-            "f": spec["mpi"].mpifc,
+            "F90": spec["mpi"].mpifc + " -fallow-argument-mismatch",
+            "F": spec["mpi"].mpifc + " -fallow-argument-mismatch",
+            "f90": spec["mpi"].mpifc + " -fallow-argument-mismatch",
+            "f": spec["mpi"].mpifc + " -fallow-argument-mismatch",
             "CC": spec["mpi"].mpicc,
             "LD": spec["mpi"].mpifc,
             # Flags and switches
@@ -111,6 +113,14 @@ class Oasis(MakefilePackage):
             "BINDIR": "$(ARCHDIR)/bin",
             "LIBBUILD": "$(ARCHDIR)/build/lib",
         }
+
+        # Some flags don't seem to be passed through to build for GCM
+        # Fix by adding flags to compiler wrapper
+        if spec.satisfies("@3-mct4.0-GCM"):
+            params["F90"] += f" {fflags}"
+            params["F"] += f" {fflags}"
+            params["f90"] += f" {fflags}"
+            params["f"] += f" {fflags}"
 
         # Write the macro settings to an include file
         with open(f"{make_dir}/make.spack", "w", encoding="utf-8") as fd:
@@ -131,6 +141,13 @@ class Oasis(MakefilePackage):
         The OASIS make system does not include an install target, so
         this function carries it out instead.
         """
+
+        build_include = os.path.join(self.arch_directory, "include")
+        if spec.satisfies("@3-mct4.0-GCM"):
+            os.mkdir(build_include)
+            mod_files = glob.glob(f"{self.arch_directory}/build/lib/*/*.mod")
+            for mod in mod_files:
+                shutil.copy(mod, build_include)
 
         copy_tree(
             os.path.join(self.arch_directory, "include"), self.spec.prefix.include
